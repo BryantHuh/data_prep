@@ -1,0 +1,28 @@
+# To generate a requirements.txt with all installed pip modules in your current virtual environment, run:
+# pip freeze > requirements.txt
+
+# Example output (replace with your actual pip freeze output):
+
+absl-py==2.1.0
+asttokens==2.4.1
+certifi==2024.2.2
+charset-normalizer==3.3.2
+decorator==5.1.1
+idna==3.7
+joblib==1.4.2
+matplotlib==3.8.4
+numpy==1.26.4
+pandas==2.2.2
+Pillow==10.3.0
+pip==24.0
+scikit-learn==1.5.0
+scipy==1.13.1
+setuptools==70.0.0
+six==1.16.0
+threadpoolctl==3.5.0
+torch==2.3.0
+tqdm==4.66.4
+typing_extensions==4.12.0
+urllib3==2.2.1
+
+# (This is just an example. Please run `pip freeze > requirements.txt` in your venv for the actual list.)

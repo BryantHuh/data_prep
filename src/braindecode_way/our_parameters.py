@@ -173,3 +173,4 @@ fig_cm.savefig(conf_mat_path)
 plt.close(fig_cm)
 
 torch.save(model.state_dict(), os.path.join(model_dir, 'moabb_downsampled_good_subjects_model.pth'))
+torch.save(model, os.path.join(model_dir, 'moabb_downsampled_good_subjects_model_full.pth'))

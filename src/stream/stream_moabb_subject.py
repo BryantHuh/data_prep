@@ -5,8 +5,8 @@ from braindecode.preprocessing import Preprocessor, preprocess
 import numpy as np
 
 # ----------- Konfiguration -----------
-subject_id = 1  # z. B. 1, 2, 3, ...
-sfreq_target = 125  # wir wollen resamplen
+subject_id = 8
+sfreq_target = 125
 channels = [
     'C3', 'C4', 'Cz',
     'FC1', 'FC2', 'FCz',
@@ -22,12 +22,12 @@ raw = dataset.datasets[0].raw
 
 preprocessors = [
     Preprocessor('pick_channels', ch_names=channels, ordered=True),
-    Preprocessor(lambda x: x * 1e6),  # V → µV
+    Preprocessor(lambda x: x * 1e6),
     Preprocessor('resample', sfreq=sfreq_target)
 ]
 preprocess(dataset, preprocessors)
 
-data = raw.get_data().T  # [samples, channels]
+data = raw.get_data().T
 sfreq = raw.info['sfreq']
 n_channels = data.shape[1]
 

@@ -34,9 +34,20 @@ n_channels = data.shape[1]
 print(f"Starte MOABB-LSL-Stream: Subject {subject_id}, {n_channels} Kanäle, {sfreq} Hz")
 
 # ----------- LSL-Stream starten -----------
-info = StreamInfo(name='EEG', type='EEG', channel_count=n_channels,
-                  nominal_srate=sfreq, channel_format='float32', source_id='moabb_subject')
+info = StreamInfo(
+    name='EEG',
+    type='EEG',
+    channel_count=n_channels,
+    nominal_srate=sfreq,
+    channel_format='float32',
+    source_id='moabb_subject'
+)
+chns = info.desc().append_child("channels")
+for ch in channels:
+    chn = chns.append_child("channel")
+    chn.append_child_value("label", ch)
 outlet = StreamOutlet(info)
+
 
 # ----------- Daten "live" streamen -----------
 for sample in data:

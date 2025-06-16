@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+"""
+Echtzeit-BCI-Feedback mit vortrainiertem ShallowFBCSPNet
+- Kontinuierliche Sliding-Window-Inferenz ohne Fixed-Offset
+- Ring-Buffer (EEG-Kanäle × WINDOW_SIZE)
+- EMA- oder Majority-Vote über letzte k Prädiktionen
+- Reset der Voting-History bei Markerwechsel
+- LSL-Stream mit EEG + Marker-Kanal
+- Pygame-Visualisierung: Stream-Name, Marker-Label, aktuelles Prediktions-Label, Wahrscheinlichkeitsbalken
+"""
 import os
 import time
 import pygame
@@ -6,132 +16,129 @@ import numpy as np
 from pylsl import StreamInlet, resolve_byprop
 from scipy.signal import butter, lfilter
 from braindecode.preprocessing import exponential_moving_standardize
+from braindecode.models import ShallowFBCSPNet
 
 # --- Konfiguration ---
-WINDOW_SIZE = 500
-WINDOW_STRIDE = 25
-N_CHANNELS = 16
+N_EEG_CHANNELS = 16
+WINDOW_SIZE = 500            # Samples (4 s @125 Hz)
+VOTE_HISTORY_LENGTH = 5      # Anzahl der letzten Prädiktionen
 SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
-MODEL_PATH = os.path.join(os.path.dirname(__file__), '../../models/moabb_downsampled_good_subjects_model_full.pth')
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-colors = [(0, 102, 204), (0, 153, 76), (255, 153, 0), (204, 0, 102)]
+MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'models',
+                          'moabb_downsampled_good_subjects_model_full.pth')
 labels_text = ['left', 'right', 'feet', 'tongue']
+colors = [(0, 102, 204), (0, 153, 76), (255, 153, 0), (204, 0, 102)]
 
-# --- Voting-Mechanismus ---
-voting_window = []
-VOTING_HISTORY_LENGTH = 10
+# --- Gerät ---
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# --- Modell laden ---
+print("Lade Modell...")
+torch.serialization.add_safe_globals([ShallowFBCSPNet])
+model = torch.load(MODEL_PATH, map_location=device, weights_only=False)
+model.to(device).eval()
+n_preds = model.get_output_shape()[2]
+print(f"Dense-Stride (Samples): {n_preds}")
+
+# --- Filter für EEG (Bandpass 4–38 Hz) ---
+def butter_bandpass(lowcut=4, highcut=38, fs=125, order=4):
+    nyq = 0.5 * fs
+    return butter(order, [lowcut/nyq, highcut/nyq], btype='band')
+b, a = butter_bandpass()
+
+
+# --- LSL-Stream finden ---
+def wait_for_stream(stream_type, timeout=60, retry=1):
+    start = time.time()
+    while True:
+        streams = resolve_byprop('type', stream_type, timeout=retry)
+        if streams:
+            return StreamInlet(streams[0])
+        if time.time() - start > timeout:
+            raise TimeoutError(f"Kein {stream_type}-Stream gefunden.")
+
+inlet = wait_for_stream('EEG', timeout=30)
+stream_name = inlet.info().name()
+
+# --- Ring-Buffer & Voting ---
+ring_buffer = np.zeros((N_EEG_CHANNELS, WINDOW_SIZE), dtype=float)
+vote_history = []
+current_marker = None
 
 # --- Pygame Setup ---
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("BCI Feedback")
-font = pygame.font.SysFont("Arial", 30)
-
-# --- LSL-Stream Finden ---
-def wait_for_eeg_stream(timeout=60, retry_interval=1):
-    print("Suche nach EEG-Stream...")
-    start_time = time.time()
-    while True:
-        streams = resolve_byprop('type', 'EEG', timeout=retry_interval)
-        if streams:
-            print("EEG-Stream gefunden.")
-            return StreamInlet(streams[0])
-        elif time.time() - start_time > timeout:
-            raise TimeoutError("Kein EEG-Stream gefunden.")
-
-# --- Modell laden ---
-model = torch.load(MODEL_PATH, map_location=device, weights_only=False)
-model.eval()
-
-# --- Ringbuffer ---
-ring_buffer = np.zeros((0, N_CHANNELS))
-
-def update_buffer(new_sample):
-    global ring_buffer
-    ring_buffer = np.vstack([ring_buffer, new_sample])
-    if ring_buffer.shape[0] > WINDOW_SIZE:
-        ring_buffer = ring_buffer[-WINDOW_SIZE:]
-
-# --- Preprocessing ---
-def butter_bandpass(lowcut=4, highcut=38, fs=125, order=4):
-    nyq = 0.5 * fs
-    b, a = butter(order, [lowcut / nyq, highcut / nyq], btype='band')
-    return b, a
-
-def apply_filter(data, b, a):
-    return lfilter(b, a, data, axis=0)
-
-# --- Sliding-Window Prediction ---
-def predict_sliding_windows(buffer, model, device):
-    if buffer.shape[0] < WINDOW_SIZE:
-        return None
-
-    b, a = butter_bandpass()
-    filtered = apply_filter(buffer, b, a)
-    standardized = exponential_moving_standardize(filtered, factor_new=0.001, init_block_size=100)
-
-    windows = [standardized[i:i + WINDOW_SIZE].T for i in range(0, standardized.shape[0] - WINDOW_SIZE + 1, WINDOW_STRIDE)]
-    if not windows:
-        return None
-
-    inputs = torch.tensor(np.stack(windows), dtype=torch.float32).to(device)
-
-    with torch.no_grad():
-        preds = model(inputs)
-        probs = torch.nn.functional.softmax(preds, dim=1).cpu().numpy()
-        return probs.mean(axis=(0, 2))
-
-# --- LSL Start ---
-try:
-    inlet = wait_for_eeg_stream(timeout=30)
-except TimeoutError as e:
-    print(e)
-    pygame.quit()
-    exit(1)
-
-# --- Hauptloop ---
-running = True
+pygame.display.set_caption("BCI Live Feedback")
+f_small = pygame.font.SysFont("Arial", 18)
+f_med = pygame.font.SysFont("Arial", 24)
+f_big = pygame.font.SysFont("Arial", 48, bold=True)
+f_mark = pygame.font.SysFont("Arial", 30, italic=True)
 clock = pygame.time.Clock()
 
+running = True
 while running:
     screen.fill((255, 255, 255))
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
+    for ev in pygame.event.get():
+        if ev.type == pygame.QUIT:
             running = False
 
-    try:
-        sample, _ = inlet.pull_sample(timeout=0.0)
-        if sample is not None:
-            update_buffer(np.array(sample)[np.newaxis, :N_CHANNELS])
-    except RuntimeError:
-        print("LSL-Stream-Verbindung verloren.")
-        running = False
-        break
+    # Stream-Name anzeigen
+    screen.blit(f_small.render(f"Stream: {stream_name}", True, (0, 0, 0)), (10, 10))
 
-    new_probs = predict_sliding_windows(ring_buffer, model, device)
-    if new_probs is not None:
-        voting_window.append(new_probs)
-        if len(voting_window) > VOTING_HISTORY_LENGTH:
-            voting_window.pop(0)
-        avg_probs = np.mean(voting_window, axis=0)
-    else:
-        avg_probs = None
+    # Neue Probe aus LSL
+    sample_full, _ = inlet.pull_sample(timeout=0.0)
+    if sample_full is not None:
+        # Marker
+        mcode = int(sample_full[-1])
+        if mcode > 0:
+            current_marker = labels_text[mcode - 1]
+            vote_history.clear()  # Reset bei Markerwechsel
+        # EEG-Daten in Buffer verschieben
+        ring_buffer = np.roll(ring_buffer, -1, axis=1)
+        ring_buffer[:, -1] = sample_full[:N_EEG_CHANNELS]
 
-    if avg_probs is not None and len(avg_probs) == 4:
-        for i in range(4):
-            x = i * (SCREEN_WIDTH // 4) + 50
-            p = float(avg_probs[i])
-            bar_height = int(p * SCREEN_HEIGHT)
-            pygame.draw.rect(screen, colors[i], (x, SCREEN_HEIGHT - bar_height, 50, bar_height))
-            label = font.render(f"{labels_text[i]}: {p:.2f}", True, (0, 0, 0))
-            screen.blit(label, (x, SCREEN_HEIGHT - bar_height - 30))
-    else:
-        for i in range(4):
-            x = i * (SCREEN_WIDTH // 4) + 50
-            pygame.draw.rect(screen, (200, 200, 200), (x, SCREEN_HEIGHT - 50, 50, 50))
-            screen.blit(font.render("...", True, (100, 100, 100)), (x, SCREEN_HEIGHT - 100))
+    display_probs = None
+    current_pred = None
+    # Wenn der Buffer voll ist
+    if not np.any(ring_buffer == 0):
+        # Vorverarbeitung
+        filtered = lfilter(b, a, ring_buffer, axis=1)
+        standardized = exponential_moving_standardize(filtered.T,
+                                                     factor_new=1e-3,
+                                                     init_block_size=100).T
+        x = torch.tensor(standardized[np.newaxis], dtype=torch.float32, device=device)
+        with torch.no_grad():
+            logits_all = model(x)                    # [1, C, T']
+            probs_all = torch.softmax(logits_all, dim=1)
+            probs = probs_all.mean(dim=2).cpu().numpy().ravel()
+        print("Live-Probs:", np.round(probs, 3))
+
+        # Voting
+        display_probs = probs
+        pi = int(probs.argmax())
+        vote_history.append(pi)
+        if len(vote_history) > VOTE_HISTORY_LENGTH:
+            vote_history.pop(0)
+        current_pred = max(set(vote_history), key=vote_history.count)
+
+    # Marker-Label
+    if current_marker:
+        txt = f_mark.render(f"Marker: {current_marker}", True, (50, 50, 50))
+        screen.blit(txt, (SCREEN_WIDTH//2 - txt.get_width()//2, 10))
+    # Prediction-Label
+    if current_pred is not None:
+        pr = f_big.render(labels_text[current_pred].upper(), True, colors[current_pred])
+        screen.blit(pr, pr.get_rect(center=(SCREEN_WIDTH//2, 80)))
+    # Wahrscheinlichkeitsbalken
+    for i, cls in enumerate(labels_text):
+        x = i * (SCREEN_WIDTH // len(labels_text)) + 50
+        screen.blit(f_med.render(cls, True, (0, 0, 0)), (x, SCREEN_HEIGHT - 30))
+        if display_probs is not None:
+            h = int(display_probs[i] * (SCREEN_HEIGHT - 140))
+            pygame.draw.rect(screen, colors[i], (x, SCREEN_HEIGHT - 60 - h, 50, h))
+            screen.blit(f_med.render(f"{display_probs[i]:.2f}", True, (0, 0, 0)),
+                        (x, SCREEN_HEIGHT - 60 - h - 25))
+        else:
+            pygame.draw.rect(screen, (200, 200, 200), (x, SCREEN_HEIGHT - 60 - 50, 50, 50))
 
     pygame.display.flip()
     clock.tick(125)

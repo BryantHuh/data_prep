@@ -9,8 +9,6 @@ from sklearn.metrics import classification_report, confusion_matrix
 from braindecode.models import ShallowFBCSPNet
 from braindecode.preprocessing import exponential_moving_standardize
 from braindecode.visualization import plot_confusion_matrix
-from braindecode.datasets.base import BaseDataset
-from braindecode.datasets.moabb import MOABBDataset
 from braindecode.datasets import BaseConcatDataset
 from braindecode.preprocessing.windowers import create_windows_from_events
 
@@ -20,12 +18,17 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 DATA_PATH = os.path.join(PROJECT_ROOT, f"data/subject{SUBJECT}_gdf/A01T.gdf")
 MODEL_PATH = os.path.join(PROJECT_ROOT, "models/moabb_downsampled_good_subjects_model_full.pth")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "evaluation")
-LABELS_TEXT = ['left', 'right', 'feet', 'tongue']
-EVENT_ID = {'769': 0, '770': 1, '771': 2, '772': 3}  # angepasst für GDF-Annotationen
+LABELS_TEXT = ['left_hand', 'right_hand', 'feet', 'tongue']
+EVENT_ID = {
+    '769': 0,
+    '770': 1,
+    '771': 2,
+    '772': 3
+}
+label_to_int = EVENT_ID
 LOWCUT, HIGHCUT = 4, 38
 FS = 125
 WINDOW_SIZE_SEC = 4.0
-STRIDE_SEC = 0.5
 
 # --- Gerät wählen ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -35,8 +38,13 @@ torch.serialization.add_safe_globals([ShallowFBCSPNet])
 model = torch.load(MODEL_PATH, map_location=device, weights_only=False)
 model.eval()
 
+# --- Sliding-Window-Parameter ---
+input_window_samples = 500
+n_preds_per_input = model.get_output_shape()[2]  # automatische Ableitung
+
 # --- GDF-Datei laden ---
 raw = mne.io.read_raw_gdf(DATA_PATH, preload=True)
+print("Annotations descriptions:", np.unique(raw.annotations.description))
 
 # --- Passende Kanäle anhand tatsächlicher GDF-Namen auswählen ---
 INCLUDED_CHANNELS = [
@@ -53,37 +61,51 @@ data = raw.get_data()
 standardized_data = exponential_moving_standardize(data, factor_new=1e-3, init_block_size=100)
 raw._data = standardized_data
 
-# --- Braindecode-kompatibles Dataset aufbauen ---
-from braindecode.datasets.base import BaseDataset
-base_ds = BaseDataset(raw)
-concat_ds = BaseConcatDataset([base_ds])
+# --- Events aus Annotationen ---
+events, _ = mne.events_from_annotations(raw, event_id=EVENT_ID)
+# epochs = mne.Epochs(raw, events, event_id=EVENT_ID, tmin=-0.5, tmax=4.0, baseline=None, preload=True)
+# epochs = mne.Epochs(raw, events, event_id=EVENT_ID, tmin=0.0, tmax=4.0, baseline=None, preload=True)
 
-# --- Sliding-Window-Parameter ---
-window_size_samples = int(WINDOW_SIZE_SEC * FS)
-stride_samples = int(STRIDE_SEC * FS)
+# --- Debug: Länge der Trials überprüfen ---
+print("\n--- Trial-Debug ---")
+for i, (onset, duration, desc) in enumerate(zip(raw.annotations.onset, raw.annotations.duration, raw.annotations.description)):
+    if desc in EVENT_ID:
+        start_sample = int(onset * raw.info['sfreq'])
+        trial_samples = int(duration * raw.info['sfreq'])
+        print(f"Trial {i}: Start={start_sample}, Dauer={trial_samples} Samples, Event={desc}")
+print("--- Ende Trial-Debug ---\n")
 
-# --- Fenster aus Events erstellen ---
-windows_ds = create_windows_from_events(
-    concat_ds,
-    trial_start_offset_samples=0,
-    trial_stop_offset_samples=0,
-    window_size_samples=window_size_samples,
-    window_stride_samples=stride_samples,
-    drop_last_window=True,
-    mapping=EVENT_ID,
-    preload=True,
-    accepted_bads_ratio=1.0
+from braindecode.datasets import BaseDataset
+dataset = BaseConcatDataset([BaseDataset(raw=raw, description=None)])
+trial_start_offset_samples = int(-0.5 * FS)
+trial_stop_offset_samples = trial_start_offset_samples + input_window_samples
+n_preds_per_input = model.get_output_shape()[2]
+print("Mapping übergeben an create_windows_from_events:", label_to_int)
+base_ds = create_windows_from_events(
+    dataset,
+    trial_start_offset_samples=trial_start_offset_samples,
+    trial_stop_offset_samples=trial_stop_offset_samples,
+    window_size_samples=input_window_samples,
+    window_stride_samples=n_preds_per_input,
+    drop_last_window=False,
+    mapping=label_to_int,
+    preload=True
 )
+
+labels = [sample[1] for sample in base_ds]
+print("Verteilung der Labels im Datensatz:", pd.Series(labels).value_counts())
 
 # --- Sliding Window Inferenz ---
 y_true, y_pred = [], []
-for i in range(len(windows_ds)):
-    x = windows_ds[i][0][np.newaxis]  # shape: [1, C, T]
-    label = windows_ds[i][1]
+for i in range(len(base_ds)):
+    x = base_ds[i][0][np.newaxis]  # shape: [1, C, T]
+    label = base_ds[i][1]
     with torch.no_grad():
         x_tensor = torch.tensor(x, dtype=torch.float32, device=device)
         pred = model(x_tensor)
+        #print("Shape der Modellvorhersage:", pred.shape)
         probs = torch.softmax(pred, dim=1).mean(dim=2).cpu().numpy().ravel()
+        #print("Probs:", probs)
         pred_class = int(np.argmax(probs))
     y_true.append(label)
     y_pred.append(pred_class)

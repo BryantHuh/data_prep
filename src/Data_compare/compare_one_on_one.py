@@ -1,52 +1,46 @@
-
-
-import numpy as np
 import mne
-from braindecode.preprocessing import (
-    exponential_moving_standardize,
-    preprocess,
-    Preprocessor,
-)
+import numpy as np
+from moabb.datasets import BNCI2014_001
 
-# Path to GDF file and channel list
-gdf_file = "../../../data/subject1_gdf/A01E.gdf"
-included_channels = [
-    'C3', 'C4', 'Cz',
-    'FC1', 'FC2', 'FCz',
-    'CP1', 'CP2', 'CPz',
-    'P1', 'P2', 'Pz',
-    'C1', 'C2',
-    'CP3', 'CP4'
-]
+# 1) MOABB laden
+ds = BNCI2014_001()
+all_data = ds.get_data()
 
-# Load raw GDF
-raw = mne.io.read_raw_gdf(gdf_file, preload=True)
-raw.pick_channels(included_channels)
+# 2) Subject / Session / Run auswählen
+subj = list(all_data.keys())[0]
+sess = '0train'
+run = '0'
+raw_moabb = all_data[subj][sess][run]
+moabb_chs = raw_moabb.info['ch_names']
+print(f"MOABB-Kanäle ({sess}, Run {run}):\n{moabb_chs}\n")
 
-# Extract left hand events (Cue type 769)
-events, event_id = mne.events_from_annotations(raw)
-left_events = events[events[:, 2] == 769]
+# 3) GDF laden
+gdf_path = 'data/subject1_gdf/A01T.gdf'
+raw_gdf = mne.io.read_raw_gdf(gdf_path, preload=True)
 
-# Extract first left hand trial (4s window)
-sfreq = raw.info['sfreq']
-start = left_events[0, 0]
-stop = start + int(4 * sfreq)
-segment_raw = raw.get_data(start=start, stop=stop)
+# 4) Dummy-Stim-Kanal (misc) hinzufügen, falls fehlt
+if 'stim' not in raw_gdf.ch_names:
+    sf = raw_gdf.info['sfreq']
+    stim_data = np.zeros((1, raw_gdf.n_times))
+    info = mne.create_info(['stim'], sf, ['misc'])
+    raw_stim = mne.io.RawArray(stim_data, info)
+    raw_gdf.add_channels([raw_stim], force_update_info=True)
 
-# Comparison 1: Unprocessed
-print("=== Vergleich ohne Preprocessing ===")
-print("Shape Segment (Raw):", segment_raw.shape)
+# 5) Kanal-Mapping MOABB→GDF
+mapping = {
+    'Fz':   'EEG-Fz','FC3':'EEG-0','FC1':'EEG-1','FCz':'EEG-2','FC2':'EEG-3',
+    'FC4':'EEG-4','C5':'EEG-5','C3':'EEG-C3','C1':'EEG-6','Cz':'EEG-Cz',
+    'C2':'EEG-7','C4':'EEG-C4','C6':'EEG-8','CP3':'EEG-9','CP1':'EEG-10',
+    'CPz':'EEG-11','CP2':'EEG-12','CP4':'EEG-13','P1':'EEG-14','Pz':'EEG-Pz',
+    'P2':'EEG-15','POz':'EEG-16','EOG1':'EOG-left','EOG2':'EOG-central',
+    'EOG3':'EOG-right','stim':'stim',
+}
 
-# Apply Braindecode Preprocessing
-def apply_bd_preprocessing(rawdata):
-    preprocess(rawdata, [Preprocessor("pick_types", eeg=True, eog=False)])
-    preprocess(rawdata, [Preprocessor("filter", l_freq=4.0, h_freq=38.0)])
-    preprocess(rawdata, [Preprocessor(exponential_moving_standardize, factor_new=0.001, init_block_size=1000)])
-    return rawdata
+# 6) GDF in MOABB-Reihenfolge picken
+gdf_order = [mapping[ch] for ch in moabb_chs]
+raw_gdf_sel = raw_gdf.copy().pick_channels(gdf_order)
 
-raw_proc = apply_bd_preprocessing(raw.copy())
-segment_proc = raw_proc.get_data(start=start, stop=stop)
-
-print("=== Vergleich MIT Braindecode Preprocessing ===")
-print("Shape Segment (Processed):", segment_proc.shape)
-print("Max. Absolutdifferenz (Raw vs Processed):", np.max(np.abs(segment_raw - segment_proc)))
+print("GDF→MOABB pick order:\n", gdf_order)
+print("Shapes nach pick:")
+print(" MOABB:", raw_moabb.get_data().shape)
+print(" GDF  :", raw_gdf_sel.get_data().shape)

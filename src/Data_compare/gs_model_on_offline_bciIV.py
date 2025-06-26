@@ -1,124 +1,147 @@
+# gs_model_on_offline_bciIV.py
 import os
 import numpy as np
-import torch
 import mne
-import matplotlib.pyplot as plt
-import pandas as pd
-from sklearn.metrics import classification_report, confusion_matrix
+import torch
+from skorch.helper import predefined_split
+from sklearn.metrics import confusion_matrix
 
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
+from braindecode import EEGClassifier
+from braindecode.training import CroppedLoss
+
 from braindecode.preprocessing import exponential_moving_standardize
-from braindecode.visualization import plot_confusion_matrix
-from braindecode.datasets import BaseConcatDataset
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import Preprocessor, preprocess, create_windows_from_events
 
-# --- Konfiguration ---
-SUBJECT = "1"
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-DATA_PATH = os.path.join(PROJECT_ROOT, f"data/subject{SUBJECT}_gdf/A01T.gdf")
-MODEL_PATH = os.path.join(PROJECT_ROOT, "models/moabb_downsampled_good_subjects_model_full.pth")
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "evaluation")
-LABELS_TEXT = ['left_hand', 'right_hand', 'feet', 'tongue']
-EVENT_ID = {
-    '769': 0,
-    '770': 1,
-    '771': 2,
-    '772': 3
+# 1) ---- RAW einlesen und Kanäle umbenennen / picken ----
+
+gdf_path = r"E:\schirri_test_braindecode\data\subject1_gdf\A01T.gdf"
+raw = mne.io.read_raw_gdf(gdf_path, preload=True, verbose='ERROR')
+
+# Original‐Annotation‐Labels: '769','770','771','772'
+EVENT_ID = {'769': 769, '770': 770, '771': 771, '772': 772}
+
+# Rename alle EEG-Kanäle aus der GDF auf 16, wie beim Training
+RENAMING = {
+    'EEG-Fz':'Fz',  'EEG-0':'FC3',  'EEG-1':'FC1', 'EEG-2':'FCz',
+    'EEG-3':'FC2','EEG-4':'FC4','EEG-5':'C5','EEG-C3':'C3',
+    'EEG-6':'C1','EEG-Cz':'Cz','EEG-7':'C2','EEG-C4':'C4',
+    'EEG-8':'C6','EEG-9':'CP3','EEG-10':'CP1','EEG-11':'CPz',
+    'EEG-12':'CP2','EEG-13':'CP4','EEG-14':'P1','EEG-Pz':'Pz',
+    'EEG-15':'P2','EEG-16':'POz'
 }
-label_to_int = EVENT_ID
-LOWCUT, HIGHCUT = 4, 38
-FS = 125
-WINDOW_SIZE_SEC = 4.0
+raw.rename_channels(RENAMING)
 
-# --- Gerät wählen ---
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# --- Modell laden ---
-torch.serialization.add_safe_globals([ShallowFBCSPNet])
-model = torch.load(MODEL_PATH, map_location=device, weights_only=False)
-model.eval()
-
-# --- Sliding-Window-Parameter ---
-input_window_samples = 500
-n_preds_per_input = model.get_output_shape()[2]  # automatische Ableitung
-
-# --- GDF-Datei laden ---
-raw = mne.io.read_raw_gdf(DATA_PATH, preload=True)
-print("Annotations descriptions:", np.unique(raw.annotations.description))
-
-# --- Passende Kanäle anhand tatsächlicher GDF-Namen auswählen ---
-INCLUDED_CHANNELS = [
-    'EEG-C3', 'EEG-C4', 'EEG-Cz', 'EEG-Pz',
-    'EEG-Fz',
-    'EEG-0', 'EEG-1', 'EEG-2', 'EEG-3',
-    'EEG-9', 'EEG-10', 'EEG-11', 'EEG-12', 'EEG-13', 'EEG-14', 'EEG-15'
+# nur genau diese 16 Kanäle
+included_ch = [
+    'C3','C4','Cz',
+    'FC1','FC2','FCz',
+    'CP1','CP2','CPz',
+    'P1','P2','Pz',
+    'C1','C2','CP3','CP4'
 ]
-raw.pick(INCLUDED_CHANNELS)
+raw.pick_channels(included_ch)
 
-# --- Preprocessing (Braindecode-Standard) ---
-raw.filter(l_freq=LOWCUT, h_freq=HIGHCUT)
-data = raw.get_data()
-standardized_data = exponential_moving_standardize(data, factor_new=1e-3, init_block_size=100)
-raw._data = standardized_data
+# 2) ---- Events aus den Annotations ziehen ----
+#    wir mappen direkt auf 769–772, keine 7/8/9/10‐Remapperei
+events, _ = mne.events_from_annotations(
+    raw,
+    event_id=EVENT_ID,
+    regexp='^(769|770|771|772)$'
+)
 
-# --- Events aus Annotationen ---
-events, _ = mne.events_from_annotations(raw, event_id=EVENT_ID)
-# epochs = mne.Epochs(raw, events, event_id=EVENT_ID, tmin=-0.5, tmax=4.0, baseline=None, preload=True)
-# epochs = mne.Epochs(raw, events, event_id=EVENT_ID, tmin=0.0, tmax=4.0, baseline=None, preload=True)
+# 3) ---- Full‐Epochs über 0.0–4.0 s bauen ----
+epochs = mne.Epochs(
+    raw, events,
+    event_id=EVENT_ID,
+    tmin=0.0, tmax=4.0,
+    baseline=None,
+    preload=True,
+    verbose='ERROR'
+)
+X = epochs.get_data()                    # shape = (288, 16, 500)
+y = epochs.events[:, 2].astype(int)     # 769,770,771,772
 
-# --- Debug: Länge der Trials überprüfen ---
-print("\n--- Trial-Debug ---")
-for i, (onset, duration, desc) in enumerate(zip(raw.annotations.onset, raw.annotations.duration, raw.annotations.description)):
-    if desc in EVENT_ID:
-        start_sample = int(onset * raw.info['sfreq'])
-        trial_samples = int(duration * raw.info['sfreq'])
-        print(f"Trial {i}: Start={start_sample}, Dauer={trial_samples} Samples, Event={desc}")
-print("--- Ende Trial-Debug ---\n")
+# 4) ---- Preprocessing exakt wie im Training ----
+# (V → µV, resample auf 125 Hz, bandpass 4–38 Hz, ExponentialMovingStd)
+dataset = [(X, y)]  # wrap in list, damit preprocess() funktioniert
+preprocessors = [
+    Preprocessor('pick_channels', ch_names=included_ch, ordered=True),
+    Preprocessor(lambda arr: arr * 1e6),           # V→µV
+    Preprocessor('resample', sfreq=125),
+    Preprocessor('filter', l_freq=4, h_freq=38),
+    Preprocessor(
+        exponential_moving_standardize,
+        apply_on_array=True,
+        factor_new=1e-3,
+        init_block_size=1000
+    )
+]
+preprocess(dataset, preprocessors, n_jobs=1)
+X_pre, y_pre = dataset[0]  # nach Preprocessing
 
-from braindecode.datasets import BaseDataset
-dataset = BaseConcatDataset([BaseDataset(raw=raw, description=None)])
-trial_start_offset_samples = int(-0.5 * FS)
-trial_stop_offset_samples = trial_start_offset_samples + input_window_samples
+# 5) ---- Fenster (Crops) generieren wie im Training ----
+sfreq = 125
+input_window_samples = 500                   # 4 s @125 Hz
+trial_start_offset = int(-0.5 * sfreq)       # −0.5 s Offset
+# n_preds_per_input = wie im Train‐Model
+# also:
+model = ShallowFBCSPNet(
+    n_chans=len(included_ch),
+    n_classes=4,
+    input_window_samples=input_window_samples,
+    final_conv_length='auto'
+)
+model.to_dense_prediction_model()
 n_preds_per_input = model.get_output_shape()[2]
-print("Mapping übergeben an create_windows_from_events:", label_to_int)
-base_ds = create_windows_from_events(
-    dataset,
-    trial_start_offset_samples=trial_start_offset_samples,
-    trial_stop_offset_samples=trial_stop_offset_samples,
+
+windows = create_windows_from_events(
+    dataset=[(X_pre, y_pre)],
+    trial_start_offset_samples=trial_start_offset,
+    trial_stop_offset_samples=0,
     window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
-    mapping=label_to_int,
     preload=True
 )
+# split nur künstlich, wir faken hier "session" – alles in einen Set
+# weil wir nur offline evaluieren
+windows.datasets[0].metadata['session'] = 0
+spl = windows.split('session')
+windows_train = spl['0train']
+windows_test  = spl['0test']
 
-labels = [sample[1] for sample in base_ds]
-print("Verteilung der Labels im Datensatz:", pd.Series(labels).value_counts())
+# 6) ---- Model laden und auf Test‐Windows anwenden ----
+# path zu deinem pth
+model_path = r"E:\schirri_test_braindecode\models\moabb_…_model.pth"
+# gleiche Architektur wie beim Training
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+model.load_state_dict(torch.load(model_path, map_location=device))
+model.eval().to(device)
 
-# --- Sliding Window Inferenz ---
-y_true, y_pred = [], []
-for i in range(len(base_ds)):
-    x = base_ds[i][0][np.newaxis]  # shape: [1, C, T]
-    label = base_ds[i][1]
-    with torch.no_grad():
-        x_tensor = torch.tensor(x, dtype=torch.float32, device=device)
-        pred = model(x_tensor)
-        #print("Shape der Modellvorhersage:", pred.shape)
-        probs = torch.softmax(pred, dim=1).mean(dim=2).cpu().numpy().ravel()
-        #print("Probs:", probs)
-        pred_class = int(np.argmax(probs))
-    y_true.append(label)
-    y_pred.append(pred_class)
+clf = EEGClassifier(
+    model,
+    cropped=True,
+    criterion=CroppedLoss,
+    criterion__loss_function=torch.nn.functional.nll_loss,
+    optimizer=torch.optim.Adam,  # wird im Predict nicht gebraucht
+    train_split=predefined_split(windows_train),  # dummy
+    iterator_train__shuffle=False,
+    batch_size=64,
+    device=device,
+    classes=[769,770,771,772]
+)
+# Predict auf Test‐Windows
+y_pred = clf.predict(windows_test)
 
-# --- Evaluation speichern ---
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-report = classification_report(y_true, y_pred, target_names=LABELS_TEXT, output_dict=True)
-pd.DataFrame(report).transpose().to_csv(os.path.join(OUTPUT_DIR, "classification_report_bciiv2a_a01t.csv"))
-
-# --- Konfusionsmatrix plotten ---
-conf_mat = confusion_matrix(y_true, y_pred)
-fig = plot_confusion_matrix(conf_mat, class_names=LABELS_TEXT)
-fig.suptitle("Confusion Matrix – BCI IV 2a A01T")
-plt.tight_layout()
-fig.savefig(os.path.join(OUTPUT_DIR, "confmat_bciiv2a_a01t.png"))
-plt.show()
+# 7) ---- Auswertung ----
+# wir müssen y_true in dieselbe Form bringen – windows_test.targets liefert
+# die passenden 769/770/…
+y_true = windows_test.get_metadata().target
+# accuracy
+acc = np.mean(y_pred == y_true) * 100
+print(f"Offline‐Accuracy = {acc:.1f}%")
+# Confusion‐Matrix
+cm = confusion_matrix(y_true, y_pred, labels=[769,770,771,772])
+print("Confusion‐Matrix:\n", cm)

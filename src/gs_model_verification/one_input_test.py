@@ -74,46 +74,36 @@ windows_dataset = create_windows_from_events(
     preload=True,
 )
 
-# 4. Hole das erste Fenster (Trial 0, Fenster 0) und seine Metadaten
-X_np, y_true, meta0 = windows_dataset[0]
-print(f"Loaded one window: shape={X_np.shape}, label={y_true}, meta={meta0}")
+# 4. Hole Metadaten-DataFrame und analysiere Fenster-Trial-Zuordnung
+metadata_df = windows_dataset.get_metadata()
+print("\n📄 Spalten im Metadaten-DataFrame:", metadata_df.columns.tolist())
 
-# 5. Modell laden
-print("Lade gesamtes Modell…")
-torch.serialization.add_safe_globals([ShallowFBCSPNet])
-model = torch.load(model_path, map_location=device, weights_only=False)
-print(f"Modell geladen: {model}")
-model.to(device).eval()
+# Wähle einen Beispiel-Trial (z. B. erstes vorkommendes)
+trial_start = metadata_df.iloc[0]["i_start_in_trial"]
+trial_windows = metadata_df[metadata_df["i_start_in_trial"] == trial_start]
+print(f"Gefundene Fenster für Trial-Start {trial_start}: {len(trial_windows)}")
+print("Trial-Metadaten-Vorschau:\n", trial_windows.head())
 
-# 6. Sliding-Window-Inferenz über alle 1-Sample-Crops im ersten Trial
-#    Wir suchen alle Indizes, bei denen trial_nr == 0
-idxs_trial0 = [
-    i for i in range(len(windows_dataset))
-    if windows_dataset[i][2][0] == meta0[0]
-]
+# Richtiges Label (wird für alle Fenster identisch sein)
+true_label = trial_windows["target"].iloc[0]
 
+# 5. Inferenz über alle Fenster des Trials
 preds = []
 with torch.no_grad():
-    for idx in idxs_trial0:
-        X_w, y_w, meta = windows_dataset[idx]
-        x = torch.tensor(X_w, dtype=torch.float32, device=device).unsqueeze(0)  # [1, n_chans, win_len]
-        logits = model(x)  # Dense-Net liefert [1, n_classes, n_preds]
-
-        # 1) Mittel über alle Prädiktionen (Zeitschnitte):
+    for i in trial_windows.index:
+        X_w, y_w, meta = windows_dataset[i]
+        x = torch.tensor(X_w, dtype=torch.float32, device=device).unsqueeze(0)
+        logits = model(x)
         if logits.ndim == 3:
-            # Mitteln über die Zeit-Achse (dim=2), Ergebnis: [1, n_classes]
             logits = logits.mean(dim=2)
-
-        # 2) Jetzt argmax über die Klassen-Achse (dim=1) und Index extrahieren
         pred = int(logits.argmax(dim=1).item())
         preds.append(pred)
 
-# 3) Verteilung anzeigen
+# 6. Ausgabe
 cnt = Counter(preds)
-print(f"\nVerteilung der Vorhersagen über alle {len(preds)} Crops im ersten Trial:")
+print(f"\n📊 Verteilung der Vorhersagen über alle {len(preds)} Crops im Trial:")
 for cls, count in sorted(cnt.items()):
     print(f"  Klasse {cls}: {count:3d} ({count/len(preds)*100:5.1f}%)")
 
-# 4) Mehrheitsvorhersage (Mode)
 majority = cnt.most_common(1)[0][0]
-print(f"Mehrheitsklasse: {majority}  (Ground-Truth war: {y_true})")
+print(f"🏁 Mehrheitsklasse: {majority}  (Ground-Truth war: {true_label})")

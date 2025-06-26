@@ -114,7 +114,7 @@ windows_test  = spl['0test']
 
 # 6) ---- Model laden und auf Test‐Windows anwenden ----
 # path zu deinem pth
-model_path = r"E:\schirri_test_braindecode\models\moabb_…_model.pth"
+model_path = r"E:\schirri_test_braindecode/models/moabb_…_model.pth"
 # gleiche Architektur wie beim Training
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model.load_state_dict(torch.load(model_path, map_location=device))

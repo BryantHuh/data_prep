@@ -61,6 +61,7 @@ print(f"Modell geladen: {model}")
 model.to(device).eval()
 
 n_preds_per_input = model.get_output_shape()[2]
+print(f"Vorhersagen pro Input-Fenster: {n_preds_per_input}")
 
 # 3. Fenster erzeugen: Länge 500, non-overlap
 print("Erzeuge Fenster…")
@@ -101,7 +102,7 @@ with torch.no_grad():
 
 # 6. Ausgabe
 cnt = Counter(preds)
-print(f"\n📊 Verteilung der Vorhersagen über alle {len(preds)} Crops im Trial:")
+print(f"\n📊 Verteilung der Vorhersagen über alle {len(preds)} Fenster im Trial:")
 for cls, count in sorted(cnt.items()):
     print(f"  Klasse {cls}: {count:3d} ({count/len(preds)*100:5.1f}%)")
 

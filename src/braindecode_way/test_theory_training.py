@@ -166,5 +166,5 @@ fig_cm.savefig(os.path.join(log_dir, 'confmat_subject8.png'))
 plt.close(fig_cm)
 
 # 🔐 Modell speichern
-torch.save(model, os.path.join(model_dir, 'Test8.pth'))
-print("\n✅ Modell gespeichert als: models/Test8.pth")
+torch.save(model, os.path.join(model_dir, 'Test8lo.pth'))
+print("\n✅ Modell gespeichert als: models/Test8lo.pth")

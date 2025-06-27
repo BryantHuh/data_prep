@@ -15,11 +15,11 @@ from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Verwende Gerät: {device}")
 
-subject_id = 9
+subject_id = 8
 sfreq_target = 125
 win_len = 500
 model_path = os.path.abspath(
-    os.path.join(__file__, "..", "..", "..", "models", "moabb_downsampled_good_subjects_model_full.pth")
+    os.path.join(__file__, "..", "..", "..", "models", "test8lo.pth")
 )
 
 # Dataset

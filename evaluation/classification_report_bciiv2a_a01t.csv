@@ -1,8 +1,0 @@
-,precision,recall,f1-score,support
-left_hand,0.0,0.0,0.0,2016.0
-right_hand,0.0,0.0,0.0,2016.0
-feet,0.25,1.0,0.4,2016.0
-tongue,0.0,0.0,0.0,2016.0
-accuracy,0.25,0.25,0.25,0.25
-macro avg,0.0625,0.25,0.1,8064.0
-weighted avg,0.0625,0.25,0.1,8064.0

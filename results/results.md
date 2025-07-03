@@ -18,7 +18,7 @@ Dies entspricht dem Evaluationsansatz der MOABB-Plattform (siehe [moabb.neurotec
 | 8       | 78.47          | 0.90                    |
 | 9       | 73.96          | 0.73                    |
 
-![Ergebnisse der Cross-Validation](shallowfbcsp_crossval_plot.png)
+
 
 ## 📌 Fazit
 

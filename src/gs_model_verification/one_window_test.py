@@ -33,7 +33,7 @@ except NameError:
 
 model_path = os.path.join(project_root, 'models', 'moabb_downsampled_good_subjects_model_full.pth')
 
-SUBJECT_ID = 8
+SUBJECT_ID = 3
 TARGET_SFREQ = 125
 WINDOW_SIZE_SAMPLES = 500
 N_CHANNELS = 16
@@ -42,7 +42,7 @@ N_CLASSES = 4
 # --- 1. Load and Preprocess Data ---
 print(f"Loading data for subject {SUBJECT_ID}...")
 dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[SUBJECT_ID])
-
+dataset = BaseConcatDataset([ds for ds in dataset.datasets if ds.description["session"] == "1test"])
 included_channels = [
     'C3', 'C4', 'Cz', 'FC1', 'FC2', 'FCz',
     'CP1', 'CP2', 'CPz', 'P1', 'P2', 'Pz',
@@ -99,7 +99,7 @@ if metadata.empty:
 
 # Get all windows belonging to the first trial.
 # We use 'i_start_in_trial' as the unique identifier for a trial.
-first_trial_start_sample = metadata['i_start_in_trial'].iloc[0] # MODIFIED LINE
+first_trial_start_sample = metadata['i_start_in_trial'].iloc[2] # MODIFIED LINE
 trial_windows_df = metadata[metadata['i_start_in_trial'] == first_trial_start_sample] # MODIFIED LINE
 true_label = trial_windows_df['target'].iloc[0]
 window_indices = trial_windows_df.index

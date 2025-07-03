@@ -23,7 +23,7 @@ def load_and_inspect_model():
         print("="*60)
 
         # Typ des geladenen Objekts
-        print(f"Typ: {type(model)}")
+        # print(f"Typ: {type(model)}")
 
         # Falls es ein Dictionary ist (state_dict + metadata)
         if isinstance(model, dict):

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Train ShallowFBCSPNet on MOABB (BNCI2014_001) using only our 16 OpenBCI channels,
-resampled to 125 Hz (We think this is the right freq, though Felix said 50?), using Cropped Decoding and only the "good" subjects (1, 3, 8 & 9).
+Train ShallowFBCSPNet on MOABB (BNCI2014_001) using only subject 3,
+16 OpenBCI channels, resampled to 125 Hz, using Cropped Decoding
+and smaller 250-sample windows (2s at 125Hz).
 """
 
 from braindecode.datasets import MOABBDataset
@@ -24,14 +25,13 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.lines import Line2D
+from collections import Counter
 
 # -------------------------------------------
-# Load MOABB dataset (only subjects 1, 3, 8, 9)
+# Load only subject 3
 # -------------------------------------------
-subject_ids = [1, 3, 8, 9]
-datasets = [MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[sid]) for sid in subject_ids]
-dataset = BaseConcatDataset(datasets)
-
+subject_ids = [3]
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=subject_ids)
 
 included_channels = [
     'C3', 'C4', 'Cz',
@@ -41,24 +41,18 @@ included_channels = [
     'C1', 'C2',
     'CP3', 'CP4'
 ]
-raw = dataset.datasets[0].raw
-print(raw.annotations)  # zeigt alle Events mit Zeitpunkten und Beschreibungen
-
-
-print("datensatz Beschreibung:")
-print(dataset.description)
 
 preprocessors = [
     Preprocessor('pick_channels', ch_names=included_channels, ordered=True),
-    Preprocessor(lambda data: data * 1e6),  # V -> uV
+    Preprocessor(lambda data: data * 1e6),
     Preprocessor('resample', sfreq=125),
     Preprocessor('filter', l_freq=4, h_freq=38),
     Preprocessor(
-    exponential_moving_standardize,
-    apply_on_array=True,
-    factor_new=1e-3,
-    init_block_size=1000
-)
+        exponential_moving_standardize,
+        apply_on_array=True,
+        factor_new=1e-3,
+        init_block_size=1000
+    )
 ]
 
 preprocess(dataset, preprocessors, n_jobs=-1)
@@ -66,7 +60,7 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # -------------------------------------------
 # Model and window parameters
 # -------------------------------------------
-input_window_samples = 500  # 4 seconds * 125 Hz
+input_window_samples = 250  # 2 seconds * 125 Hz
 n_classes = 4
 n_chans = dataset[0][0].shape[0]
 
@@ -100,14 +94,11 @@ windows_dataset = create_windows_from_events(
     drop_last_window=False,
     preload=True
 )
+
 print(f"Anzahl Original-Trials: {len(dataset.datasets[0].raw.annotations)}")
 print(f"Anzahl erzeugter Fenster (Crops): {len(windows_dataset)}")
 print("Metadata der Fenster:")
 print(windows_dataset.get_metadata().head())
-from collections import Counter
-c = Counter(windows_dataset.get_metadata()['trial'])
-print(c.most_common(5))  # zeigt z. B. [(0, 41), (1, 41), ...]
-
 
 splitted = windows_dataset.split('session')
 train_set = splitted['0train']
@@ -116,6 +107,7 @@ valid_set = splitted['1test']
 # -------------------------------------------
 # Training
 # -------------------------------------------
+from skorch.callbacks import EarlyStopping
 lr = 0.0625 * 0.01
 batch_size = 64
 n_epochs = 250
@@ -133,13 +125,16 @@ clf = EEGClassifier(
     batch_size=batch_size,
     callbacks=[
         "accuracy",
-        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1))
+        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        EarlyStopping(patience=10, threshold=0.01)
     ],
     device=device,
     classes=list(range(n_classes))
 )
 
 _ = clf.fit(train_set, y=None, epochs=n_epochs)
+print("✅ Training beendet. Starte Auswertung und Modell-Speicherung...")
+
 
 # -------------------------------------------
 # Plot Results and Save Model
@@ -151,8 +146,8 @@ model_dir = os.path.join(project_root, 'models')
 os.makedirs(log_dir, exist_ok=True)
 os.makedirs(model_dir, exist_ok=True)
 
-plot_path = os.path.join(log_dir, 'moabb_downsampled_good_subjects_training.png')
-conf_mat_path = os.path.join(log_dir, 'moabb_downsampled_good_subjects_confmat.png')
+plot_path = os.path.join(log_dir, 'subj3_250_training.png')
+conf_mat_path = os.path.join(log_dir, 'subj3_250_confmat.png')
 
 results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
 df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns, index=clf.history[:, 'epoch'])
@@ -185,5 +180,6 @@ fig_cm = plot_confusion_matrix(conf_mat, class_names=labels)
 fig_cm.savefig(conf_mat_path)
 plt.close(fig_cm)
 
-torch.save(model.state_dict(), os.path.join(model_dir, 'moabb_downsampled_good_subjects_model.pth'))
-torch.save(model, os.path.join(model_dir, 'moabb_downsampled_good_subjects_model_full.pth'))
+# Save model
+torch.save(model.state_dict(), os.path.join(model_dir, 'subj3_model_250.pth'))
+torch.save(model, os.path.join(model_dir, 'subj3_model_250_full.pth'))

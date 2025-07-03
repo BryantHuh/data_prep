@@ -107,8 +107,14 @@ while running:
                                                      init_block_size=100).T
         x = torch.tensor(standardized[np.newaxis], dtype=torch.float32, device=device)
         with torch.no_grad():
+            #TODO: Logits Logik anpassen und softmax ändern
+            # Logits berechnen
             logits_all = model(x)                    # [1, C, T']
+            print("x Dimnensionen:", x.shape)
+            print("Logits:", logits_all.shape)
+            print("Logits:", logits_all)
             probs_all = torch.softmax(logits_all, dim=1)
+            print("Probs_all:", probs_all)
             probs = probs_all.mean(dim=2).cpu().numpy().ravel()
         print("Live-Probs:", np.round(probs, 3))
 

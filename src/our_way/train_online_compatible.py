@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Train ShallowFBCSPNet on MOABB (BNCI2014_001) using only subject 3,
-16 OpenBCI channels, resampled to 125 Hz, using Cropped Decoding
-and smaller 250-sample windows (2s at 125Hz).
+Train ShallowFBCSPNet with online-compatible preprocessing.
+This script uses ExponentialMovingStandardize with apply_on_array=False
+to ensure that training and real-time inference use identical preprocessing.
 """
 
 from braindecode.datasets import MOABBDataset
-from braindecode.datasets.base import BaseConcatDataset
 from braindecode.preprocessing import Preprocessor, preprocess, create_windows_from_events
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
@@ -15,7 +14,7 @@ from braindecode.training import CroppedLoss
 from braindecode.visualization import plot_confusion_matrix
 from braindecode.preprocessing import exponential_moving_standardize
 
-from skorch.callbacks import LRScheduler
+from skorch.callbacks import LRScheduler, EarlyStopping
 from skorch.helper import predefined_split
 from sklearn.metrics import confusion_matrix
 
@@ -25,10 +24,9 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.lines import Line2D
-from collections import Counter
 
 # -------------------------------------------
-# Load only subject 3
+# Load dataset (subject 3)
 # -------------------------------------------
 subject_ids = [3]
 dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=subject_ids)
@@ -42,24 +40,28 @@ included_channels = [
     'CP3', 'CP4'
 ]
 
+# Online-compatible preprocessing
+# Key: use apply_on_array=False for online compatibility
 preprocessors = [
     Preprocessor('pick_channels', ch_names=included_channels, ordered=True),
-    Preprocessor(lambda data: data * 1e6),
+    Preprocessor(lambda data: data * 1e6),  # Scale to microvolts
     Preprocessor('resample', sfreq=125),
     Preprocessor('filter', l_freq=4, h_freq=38),
     Preprocessor(
         exponential_moving_standardize,
+        apply_on_array=False,  # CRITICAL: This ensures online compatibility
         factor_new=1e-3,
         init_block_size=1000
     )
 ]
 
+print("Applying online-compatible preprocessing...")
 preprocess(dataset, preprocessors, n_jobs=-1)
 
 # -------------------------------------------
 # Model and window parameters
 # -------------------------------------------
-input_window_samples = 250  # 2 seconds * 125 Hz
+input_window_samples = 250  # 2 seconds * 125 Hz (for fast online prediction)
 n_classes = 4
 n_chans = dataset[0][0].shape[0]
 
@@ -67,7 +69,7 @@ model = ShallowFBCSPNet(
     n_chans,
     n_classes,
     input_window_samples=input_window_samples,
-    final_conv_length='auto',
+    final_conv_length='auto',  # Let braindecode calculate appropriate length
 )
 model.to_dense_prediction_model()
 
@@ -94,9 +96,9 @@ windows_dataset = create_windows_from_events(
     preload=True
 )
 
-print(f"Anzahl Original-Trials: {len(dataset.datasets[0].raw.annotations)}")
-print(f"Anzahl erzeugter Fenster (Crops): {len(windows_dataset)}")
-print("Metadata der Fenster:")
+print(f"Number of original trials: {len(dataset.datasets[0].raw.annotations)}")
+print(f"Number of generated windows: {len(windows_dataset)}")
+print("Window metadata:")
 print(windows_dataset.get_metadata().head())
 
 splitted = windows_dataset.split('session')
@@ -106,7 +108,6 @@ valid_set = splitted['1test']
 # -------------------------------------------
 # Training
 # -------------------------------------------
-from skorch.callbacks import EarlyStopping
 lr = 0.0625 * 0.01
 batch_size = 64
 n_epochs = 250
@@ -131,9 +132,9 @@ clf = EEGClassifier(
     classes=list(range(n_classes))
 )
 
+print("Starting training with online-compatible preprocessing...")
 _ = clf.fit(train_set, y=None, epochs=n_epochs)
-print("✅ Training beendet. Starte Auswertung und Modell-Speicherung...")
-
+print("✅ Training completed. Starting evaluation and model saving...")
 
 # -------------------------------------------
 # Plot Results and Save Model
@@ -145,9 +146,10 @@ model_dir = os.path.join(project_root, 'models')
 os.makedirs(log_dir, exist_ok=True)
 os.makedirs(model_dir, exist_ok=True)
 
-plot_path = os.path.join(log_dir, 'subj3_250_training.png')
-conf_mat_path = os.path.join(log_dir, 'subj3_250_confmat.png')
+plot_path = os.path.join(log_dir, 'online_compatible_training.png')
+conf_mat_path = os.path.join(log_dir, 'online_compatible_confmat.png')
 
+# Plot training curves
 results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
 df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns, index=clf.history[:, 'epoch'])
 df = df.assign(train_misclass=100 - 100 * df.train_accuracy, valid_misclass=100 - 100 * df.valid_accuracy)
@@ -163,12 +165,15 @@ ax2.tick_params(axis='y', labelcolor='tab:red')
 ax2.set_ylabel("Misclassification [%]", color='tab:red')
 ax1.set_xlabel("Epoch")
 
-handles = [Line2D([0], [0], color='black', linestyle='-', label='Train'), Line2D([0], [0], color='black', linestyle=':', label='Valid')]
+handles = [Line2D([0], [0], color='black', linestyle='-', label='Train'),
+           Line2D([0], [0], color='black', linestyle=':', label='Valid')]
 plt.legend(handles=handles)
+plt.title("Training with Online-Compatible Preprocessing")
 plt.tight_layout()
 plt.savefig(plot_path)
 plt.close()
 
+# Plot confusion matrix
 y_true = valid_set.get_metadata().target
 y_pred = clf.predict(valid_set)
 conf_mat = confusion_matrix(y_true, y_pred)
@@ -180,5 +185,29 @@ fig_cm.savefig(conf_mat_path)
 plt.close(fig_cm)
 
 # Save model
-torch.save(model.state_dict(), os.path.join(model_dir, 'subj3_model_250.pth'))
-torch.save(model, os.path.join(model_dir, 'subj3_model_250_full.pth'))
+model_path = os.path.join(model_dir, 'online_compatible_model_250.pth')
+full_model_path = os.path.join(model_dir, 'online_compatible_model_250_full.pth')
+
+torch.save(model.state_dict(), model_path)
+torch.save(model, full_model_path)
+
+print(f"✅ Model saved to:")
+print(f"   State dict: {model_path}")
+print(f"   Full model: {full_model_path}")
+print(f"✅ Training plots saved to:")
+print(f"   Training curves: {plot_path}")
+print(f"   Confusion matrix: {conf_mat_path}")
+
+# Print final results
+final_valid_acc = df.valid_accuracy.iloc[-1] * 100
+final_valid_loss = df.valid_loss.iloc[-1]
+print(f"\n📊 Final Results:")
+print(f"   Validation Accuracy: {final_valid_acc:.2f}%")
+print(f"   Validation Loss: {final_valid_loss:.4f}")
+
+print("\n🎯 This model is now ready for online inference!")
+print("   Use RealtimeBCIClassifierOnline with the same preprocessing parameters:")
+print("   - factor_new=1e-3")
+print("   - init_block_size=1000")
+print("   - filter_low=4, filter_high=38")
+print("   - Scale to microvolts (V -> μV)")

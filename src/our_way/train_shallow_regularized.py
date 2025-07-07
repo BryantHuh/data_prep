@@ -3,6 +3,7 @@
 Train ShallowFBCSPNet on MOABB (BNCI2014_001) using only subject 3,
 16 OpenBCI channels, resampled to 125 Hz, using Cropped Decoding
 and smaller 250-sample windows (2s at 125Hz).
+Regularization: optimizer__weight_decay=1e-3
 """
 
 from braindecode.datasets import MOABBDataset
@@ -50,7 +51,7 @@ preprocessors = [
     Preprocessor(
         exponential_moving_standardize,
         factor_new=1e-3,
-        init_block_size=1000
+        init_block_size=250
     )
 ]
 
@@ -103,12 +104,33 @@ splitted = windows_dataset.split('session')
 train_set = splitted['0train']
 valid_set = splitted['1test']
 
+# Add this class before training
+class NoisyWindowsDataset(torch.utils.data.Dataset):
+    def __init__(self, base_dataset, noise_std=0.1):
+        self.base_dataset = base_dataset
+        self.noise_std = noise_std
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        x, y, *rest = self.base_dataset[idx]
+        x_noisy = x + np.random.normal(0, self.noise_std, size=x.shape).astype(x.dtype)
+        if rest:
+            return x_noisy, y, *rest
+        else:
+            return x_noisy, y
+
+# ... after splitting train/valid ...
+noise_std = 0.1
+train_set_noisy = NoisyWindowsDataset(train_set, noise_std=noise_std)
+
 # -------------------------------------------
 # Training
 # -------------------------------------------
 from skorch.callbacks import EarlyStopping
-lr = 0.0625 * 0.01
-batch_size = 64
+lr = 0.0001
+batch_size = 128
 n_epochs = 250
 
 clf = EEGClassifier(
@@ -119,19 +141,20 @@ clf = EEGClassifier(
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(valid_set),
     optimizer__lr=lr,
-    optimizer__weight_decay=0,
+    optimizer__weight_decay=1e-3,
     iterator_train__shuffle=True,
     batch_size=batch_size,
     callbacks=[
         "accuracy",
         ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
-        EarlyStopping(patience=10, threshold=0.01)
+        EarlyStopping(patience=10, threshold=0.01, load_best=True)
     ],
     device=device,
     classes=list(range(n_classes))
 )
 
-_ = clf.fit(train_set, y=None, epochs=n_epochs)
+print("Training with Gaussian noise augmentation...")
+_ = clf.fit(train_set_noisy, y=None, epochs=n_epochs)
 print("✅ Training beendet. Starte Auswertung und Modell-Speicherung...")
 
 

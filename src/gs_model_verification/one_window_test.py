@@ -99,41 +99,44 @@ if metadata.empty:
 
 # Get all windows belonging to the first trial.
 # We use 'i_start_in_trial' as the unique identifier for a trial.
-first_trial_start_sample = metadata['i_start_in_trial'].iloc[2] # MODIFIED LINE
-trial_windows_df = metadata[metadata['i_start_in_trial'] == first_trial_start_sample] # MODIFIED LINE
-true_label = trial_windows_df['target'].iloc[0]
-window_indices = trial_windows_df.index
+from collections import Counter
 
-print(f"\nAnalyzing trial with start sample {first_trial_start_sample}, which has {len(window_indices)} windows.") # MODIFIED LINE
-print(f"The ground truth label for this trial is: {true_label}")
+results = []  # Liste für (prediction, ground truth)
 
-# Perform inference
-predictions = []
-with torch.no_grad():
-    for i in window_indices:
-        X_window, _, _ = windows_dataset[i]
-        X_tensor = torch.tensor(X_window, dtype=torch.float32, device=device).unsqueeze(0)
-        output = model(X_tensor)
+for trial_start_sample in metadata['i_start_in_trial'].unique():
+    trial_df = metadata[metadata['i_start_in_trial'] == trial_start_sample]
+    true_label = trial_df['target'].iloc[0]
+    window_indices = trial_df.index
 
-        if output.ndim == 3:
-            output = output.mean(dim=2)
+    predictions = []
+    with torch.no_grad():
+        for i in window_indices:
+            X_window, _, _ = windows_dataset[i]
+            X_tensor = torch.tensor(X_window, dtype=torch.float32, device=device).unsqueeze(0)
+            output = model(X_tensor)
 
-        predicted_class = output.argmax(dim=1).item()
-        predictions.append(predicted_class)
+            if output.ndim == 3:
+                output = output.mean(dim=2)
 
-# --- 5. Display Results ---
-prediction_counts = Counter(predictions)
-majority_vote_class, majority_count = prediction_counts.most_common(1)[0]
+            pred_class = output.argmax(dim=1).item()
+            predictions.append(pred_class)
 
-print(f"\n📊 Prediction Distribution for the Trial:") # MODIFIED LINE
-for cls, count in sorted(prediction_counts.items()):
-    percentage = (count / len(predictions)) * 100
-    print(f"  Class {cls}: {count:3d} predictions ({percentage:5.1f}%)")
+    majority_vote = Counter(predictions).most_common(1)[0][0]
+    results.append((majority_vote, true_label))
 
-print(f"\n🏁 Final Prediction (Majority Vote): {majority_vote_class}")
-print(f"✅ Ground Truth Label:               {true_label}")
 
-if majority_vote_class == true_label:
-    print("✨ The prediction was CORRECT.")
-else:
-    print("❌ The prediction was INCORRECT.")
+# Auswertung
+import pandas as pd
+from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
+
+df = pd.DataFrame(results, columns=["predicted", "true"])
+accuracy = accuracy_score(df["true"], df["predicted"])
+print(f"\n✅ Gesamt-Accuracy: {accuracy:.2%}")
+
+# Confusion Matrix anzeigen
+cm = confusion_matrix(df["true"], df["predicted"])
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+disp.plot()
+plt.title("Confusion Matrix")
+plt.show()

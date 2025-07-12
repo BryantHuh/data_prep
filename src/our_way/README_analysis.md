@@ -9,6 +9,8 @@
 
 ### **Echtzeit-Klassifikationssysteme**
 - **`realtime_eegnetv4_classifier.py`**: Kern-EEGNetv4-Echtzeitklassifikator mit minimaler Vorverarbeitung, entwickelt für schnelle Inferenz
+- **`realtime_eegnetv4_classifier_fixed.py`**: **FIXED** Version mit Trial-aligned Windows für korrekte Timing-Synchronisation
+- **`realtime_eegnetv4_classifier_interactive.py`**: **INTERACTIVE** Version mit kontinuierlichen Sliding-Window-Vorhersagen für flüssige Echtzeit-Erfahrung
 - **`realtime_shallow_classifier.py`**: Echtzeit-ShallowFBCSPNet-Klassifikator mit LSL-Integration und Callback-System
 - **`realtime_shallow_online_classifier.py`**: Erweiterte Version mit online-kompatibler Vorverarbeitung, die dem Training exakt entspricht
 
@@ -19,12 +21,15 @@
 
 ### **LSL-Integration und Streaming**
 - **`lsl_eegnetv4_receiver.py`**: Empfängt separate EEG- und Marker-LSL-Streams, verarbeitet vor und klassifiziert mit EEGNetv4
+- **`lsl_eegnetv4_receiver_fixed.py`**: **FIXED** Version mit Trial-aligned Windows für korrekte Timing-Synchronisation
 - **`lsl_model_receiver_moabb_subj3.py`**: LSL-Empfänger für ShallowFBCSPNet-Modell mit MOABB-Daten
 - **`lsl_sender_moabb_subj3.py`**: Sendet MOABB-Daten über LSL-Streams für Tests
 
 ### **GUI-Anwendungen**
 - **`gui_eegnetv4_classifier.py`**: Tkinter-GUI für EEGNetv4 mit simulierten Daten und GPU-Optimierung
 - **`gui_eegnetv4_lsl_classifier.py`**: GUI für EEGNetv4 mit LSL-Streams und Echtzeitvisualisierung
+- **`gui_eegnetv4_lsl_fixed_timing.py`**: **FIXED** GUI mit Trial-aligned Windows für korrekte Timing-Synchronisation
+- **`gui_eegnetv4_interactive.py`**: **INTERACTIVE** GUI mit kontinuierlichen Sliding-Window-Vorhersagen für flüssige Echtzeit-Erfahrung
 - **`gui_online_classifier.py`**: GUI für online-kompatiblen Klassifikator mit Kalibrierungsstatusanzeige
 - **`gui_shallow_classifier.py`**: GUI für ShallowFBCSPNet-Klassifikator
 
@@ -37,6 +42,96 @@
 ### **Analyse und Utilities**
 - **`analyze_csv.py`**: Analysiert Klassifikationsergebnisse aus CSV-Dateien
 - **`check_mapping_simple.py`**: Überprüft Label-Mapping von trainierten Modellen
+- **`interactive_console_demo.py`**: **INTERACTIVE** Konsolen-Demo für kontinuierliche Klassifikation mit simulierten Daten oder LSL-Streams
+
+---
+
+## INTERAKTIVE KLASSIFIKATION: Kontinuierliche Sliding-Window-Vorhersagen
+
+### **Interaktiver Ansatz für flüssige Echtzeit-Erfahrung**
+
+**Neue interaktive Skripte:**
+- **`realtime_eegnetv4_classifier_interactive.py`**: Kontinuierlicher Klassifikator mit Sliding-Window-Vorhersagen
+- **`gui_eegnetv4_interactive.py`**: Interaktive GUI mit Echtzeit-Visualisierung
+- **`interactive_console_demo.py`**: Konsolen-Demo für Tests und Demonstrationen
+
+**Vorteile des interaktiven Ansatzes:**
+- **Flüssige Erfahrung**: Kontinuierliche Vorhersagen ohne Warten auf Trial-Marker
+- **Sofortige Rückmeldung**: Vorhersagen alle 25-50 Samples (0.2-0.4s bei 125Hz)
+- **Trend-Analyse**: Echtzeit-Analyse der Vorhersage-Stabilität
+- **Interaktive Visualisierung**: Farbkodierte Klassen und Konfidenz-Balken
+- **Flexible Konfiguration**: Anpassbare Vorhersage-Intervalle
+
+**Verwendung:**
+```bash
+# Konsolen-Demo mit simulierten Daten
+python interactive_console_demo.py --duration 60 --interval 25
+
+# Konsolen-Demo mit LSL-Streams
+python interactive_console_demo.py --lsl --interval 25
+
+# Interaktive GUI
+python gui_eegnetv4_interactive.py
+```
+
+---
+
+## KRITISCHE TIMING-KORREKTUR: Trial-Aligned vs. Sliding Windows
+
+### **Das Problem: Falsche Timing-Synchronisation**
+
+**Ursprüngliches Problem in allen GUI-Skripten:**
+- **Sliding Windows**: Verwendeten die letzten 250 Samples für jede Vorhersage
+- **Label-Zuordnung**: Labels basierten auf dem aktuellen Marker zum Zeitpunkt der Vorhersage
+- **Timing-Fehler**: Vorhersage-Fenster enthielten oft Daten von vor dem Marker-Set
+
+**Beispiel des Problems:**
+```python
+# PROBLEMATISCHER ANSATZ (Sliding Windows):
+window_data = buffer[-250:]  # Letzte 250 Samples
+current_label = marker  # Aktueller Marker
+# → Vorhersage basiert auf [sample_idx-249, sample_idx]
+# → Label basiert auf sample_idx
+# → MISMATCH: Vorhersage enthält Daten von vor dem Marker!
+```
+
+### **Die Lösung: Trial-Aligned Windows**
+
+**Korrigierter Ansatz:**
+- **Trial-Start-Marker**: Speichern des Sample-Index beim Trial-Start
+- **Trial-aligned Windows**: Fenster von [trial_start, trial_start + 250]
+- **Perfekte Synchronisation**: Vorhersage und Label basieren auf denselben Daten
+
+**Implementierung:**
+```python
+# KORREKTER ANSATZ (Trial-Aligned):
+def add_trial_marker(self, label):
+    self.trial_starts.append((self.sample_idx, label))
+
+def get_trial_window(self, trial_start_idx):
+    window_end_idx = trial_start_idx + self.window_size
+    if window_end_idx > len(self.buffer):
+        return None
+    return self.buffer[trial_start_idx:window_end_idx]
+```
+
+### **Korrigierte Dateien**
+
+1. **`lsl_eegnetv4_receiver_fixed.py`**: Trial-aligned LSL-Empfänger
+2. **`realtime_eegnetv4_classifier_fixed.py`**: Trial-aligned Klassifikator
+3. **`gui_eegnetv4_lsl_fixed_timing.py`**: Trial-aligned GUI
+
+### **Auswirkungen der Korrektur**
+
+**Vor der Korrektur:**
+- Systematische Timing-Fehler
+- Falsche Genauigkeitsmessungen
+- Unzuverlässige Echtzeit-Performance
+
+**Nach der Korrektur:**
+- Perfekte Timing-Synchronisation
+- Korrekte Genauigkeitsmessungen
+- Zuverlässige Echtzeit-Performance
 
 ---
 
@@ -107,12 +202,27 @@ Die Stream-Skripte funktionierten technisch, hatten aber grundlegende Probleme:
 2. **Synchronisationsfehler**: Marker waren nicht ordnungsgemäß mit EEG-Daten synchronisiert
 3. **Inferenzfehler**: Falsche Behandlung von Modellausgaben, insbesondere für Cropped Decoding
 4. **Datenformatverwirrung**: Gemischte Datentypen und schlechte Stream-Struktur
+5. **Timing-Fehler**: Sliding Windows führten zu systematischen Timing-Fehlern zwischen Vorhersagen und Labels
 
 Das `our_way`-Verzeichnis stellt eine vollständige Neuschreibung dar, die alle diese Probleme mit ordnungsgemäßer Architektur, konsistenter Vorverarbeitung und robuster Echtzeit-Inferenz adressiert.
 
 ---
 
 ## Wichtige technische Verbesserungen
+
+### **Timing-Synchronisation**
+```python
+# PROBLEMATISCHER ANSATZ (Sliding Windows):
+window_data = buffer[-250:]  # Letzte 250 Samples
+current_label = marker  # Aktueller Marker
+# → Timing-Mismatch!
+
+# KORREKTER ANSATZ (Trial-Aligned):
+trial_start = marker_times[-1]  # Trial-Start-Index
+window_data = buffer[trial_start:trial_start + 250]  # Trial-aligned Window
+trial_label = marker_labels[-1]  # Trial-Start-Label
+# → Perfekte Synchronisation!
+```
 
 ### **Vorverarbeitungspipeline**
 ```python
@@ -170,5 +280,6 @@ Das `our_way`-Verzeichnis stellt eine bedeutende Verbesserung gegenüber dem `st
 3. **Korrekte Modell-Inferenz**-Behandlung
 4. **Robuste Fehlerbehandlung** und Validierung
 5. **Flexible und konfigurierbare** Architektur
+6. **Korrekte Timing-Synchronisation** mit Trial-aligned Windows
 
 Diese Verbesserungen stellen sicher, dass die Echtzeit-BCI-Klassifikation zuverlässig funktioniert und eine Leistung erreicht, die mit der Offline-Evaluierung vergleichbar ist.

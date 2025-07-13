@@ -1,24 +1,23 @@
 # Dokumentation und Forschung
 
-Dieses Verzeichnis dient zur Sammlung von Dokumentation, Forschungsmaterialien und wissenschaftlichen Ressourcen für das BCI-Projekt. Es ist für die zentrale Organisation von Wissen und Dokumentation konzipiert.
+Dieses Verzeichnis dient zur Sammlung von Dokumentation und Forschungsmaterialien für das BCI-Projekt. Es ist für die zentrale Organisation von Wissen und Dokumentation konzipiert.
 
 ## 🎯 Zweck und Verwendung
 
 ### Projekt-Dokumentation
 - **Technische Dokumentation**: Detaillierte Beschreibungen der Implementierung
 - **Benutzeranleitungen**: Schritt-für-Schritt-Anweisungen für verschiedene Anwendungen
-- **API-Dokumentation**: Beschreibung der Schnittstellen und Funktionen
-- **Architektur-Dokumentation**: System-Design und -Struktur
+- **Experiment-Protokolle**: Standardisierte Protokolle für BCI-Experimente
+- **Troubleshooting-Guides**: Lösungen für häufige Probleme
 
 ### Forschungsmaterialien
 - **Literatur-Reviews**: Zusammenfassungen relevanter wissenschaftlicher Arbeiten
 - **Methodik-Beschreibungen**: Detaillierte Beschreibungen der verwendeten Methoden
-- **Experiment-Protokolle**: Standardisierte Protokolle für BCI-Experimente
 - **Benchmarking-Studien**: Vergleiche mit anderen BCI-Systemen
+- **Experiment-Ergebnisse**: Dokumentation von Versuchsergebnissen
 
 ### Wissensmanagement
 - **Best Practices**: Sammlung bewährter Praktiken und Empfehlungen
-- **Troubleshooting-Guides**: Lösungen für häufige Probleme
 - **FAQ-Sammlung**: Antworten auf häufig gestellte Fragen
 - **Glossar**: Definitionen von Fachbegriffen und Konzepten
 
@@ -27,7 +26,6 @@ Dieses Verzeichnis dient zur Sammlung von Dokumentation, Forschungsmaterialien u
 ### Technische Dokumentation
 - **Installationsanleitungen**: Schritt-für-Schritt-Setup-Anweisungen
 - **Konfigurations-Guides**: Detaillierte Konfigurationsanweisungen
-- **API-Referenzen**: Vollständige API-Dokumentation
 - **Code-Beispiele**: Praktische Implementierungsbeispiele
 
 ### Forschungsdokumentation
@@ -40,7 +38,6 @@ Dieses Verzeichnis dient zur Sammlung von Dokumentation, Forschungsmaterialien u
 - **Quick-Start-Guides**: Schnelle Einführung in das System
 - **Tutorials**: Schritt-für-Schritt-Lernanleitungen
 - **Referenz-Handbücher**: Umfassende System-Beschreibungen
-- **Video-Tutorials**: Visuelle Lernmaterialien
 
 ## 🎯 Entscheidungsbegründungen
 
@@ -56,12 +53,6 @@ Dieses Verzeichnis dient zur Sammlung von Dokumentation, Forschungsmaterialien u
 - **Qualitätskontrolle**: Standardisierte Prozesse und Verfahren
 - **Wissenschaftliche Strenge**: Vollständige Dokumentation für Publikationen
 
-### Warum verschiedene Dokumentationsformate?
-- **Zugänglichkeit**: Verschiedene Formate für verschiedene Zielgruppen
-- **Flexibilität**: Anpassung an verschiedene Verwendungszwecke
-- **Wartbarkeit**: Einfache Aktualisierung und Erweiterung
-- **Kompatibilität**: Unterstützung verschiedener Tools und Plattformen
-
 ## 🚀 Verwendung
 
 ### Dokumentation erstellen
@@ -76,12 +67,6 @@ Dieses Verzeichnis dient zur Sammlung von Dokumentation, Forschungsmaterialien u
 3. **Qualitätskontrolle**: Überprüfen Sie Genauigkeit und Aktualität
 4. **Feedback sammeln**: Sammeln Sie Benutzer-Feedback für Verbesserungen
 
-### Dokumentation verbreiten
-1. **Zugänglichkeit**: Stellen Sie einfachen Zugang sicher
-2. **Suchbarkeit**: Implementieren Sie effektive Suchfunktionen
-3. **Navigation**: Erstellen Sie klare Navigationsstrukturen
-4. **Aktualisierung**: Halten Sie Dokumentation aktuell
-
 ## 📝 Dokumentationsformate
 
 ### Markdown-Dateien
@@ -94,13 +79,11 @@ Dieses Verzeichnis dient zur Sammlung von Dokumentation, Forschungsmaterialien u
 - **Portabilität**: Universell lesbar auf verschiedenen Plattformen
 - **Formatierung**: Professionelle Darstellung und Layout
 - **Druckbarkeit**: Optimiert für Druck und Offline-Verwendung
-- **Sicherheit**: Kontrollierte Verteilung und Zugang
 
 ### Interaktive Dokumentation
-- **Web-basierte Tools**: Interaktive Tutorials und Beispiele
-- **Video-Tutorials**: Visuelle Lernmaterialien
 - **Jupyter Notebooks**: Interaktive Code-Beispiele
-- **API-Dokumentation**: Automatisch generierte API-Referenzen
+- **Video-Tutorials**: Visuelle Lernmaterialien
+- **Web-basierte Tools**: Interaktive Tutorials und Beispiele
 
 ## 🔄 Framework-Überlegungen
 
@@ -113,7 +96,6 @@ Dieses Verzeichnis dient zur Sammlung von Dokumentation, Forschungsmaterialien u
 - **Erweiterte Beispiele**: Mehr praktische Implementierungsbeispiele
 - **Interaktive Tutorials**: Web-basierte Lernmaterialien
 - **Automatische Generierung**: KI-basierte Dokumentationserstellung
-- **Cloud-Integration**: Remote-Dokumentationszugang
 
 ## 🎯 Best Practices
 

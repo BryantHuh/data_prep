@@ -124,9 +124,6 @@ Dieses Projekt dient als Grundlage für BCI-Forschung und -Entwicklung. Zukünft
 - Verbesserte Echtzeit-Performance
 - Erweiterte Modell-Architekturen
 
-## 📄 Lizenz
-
-[Fügen Sie hier Ihre Lizenzinformationen hinzu]
 
 ---
 

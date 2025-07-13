@@ -3,7 +3,7 @@
 EEGNetv4 Training Script
 
 Trains EEGNetv4 model on MOABB BNCI2014_001 dataset with subject 3.
-EEGNetv4 is currently the preferred model for real-time BCI classification
+EEGNetv4 is currently the preferred model for real-time BCI classification in our project
 due to its robust performance and compatibility with streaming applications.
 
 This script trains a single-subject model that can be used for real-time

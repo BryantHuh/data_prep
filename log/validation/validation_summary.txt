@@ -1,8 +1,0 @@
-VALIDATION SUMMARY
-==================================================
-total_samples: 90144
-accuracy: 0.8019391196308129
-mean_confidence: 0.828473687171936
-std_confidence: 0.17285872995853424
-min_confidence: 0.2558513581752777
-max_confidence: 0.9999954700469971

@@ -18,6 +18,7 @@ Dieses BCI-System konzentriert sich auf die Klassifikation motorischer Vorstellu
 
 ```
 ├── src/
+│   ├── 00_original/          # Ursprungs Notebook von Braindecode
 │   ├── 01_training/          # Modell-Trainingsskripte
 │   ├── 02_evaluation/        # Modell-Evaluierung und -Analyse
 │   ├── 03_streaming/         # Echtzeit-Streaming-Anwendungen

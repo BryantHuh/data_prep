@@ -7,62 +7,79 @@ Dieses Verzeichnis enthält alle trainierten BCI-Modelle. Die Modelle werden in 
 ### EEGNetv4 Modelle (Bevorzugt für Echtzeit-Anwendungen)
 
 #### `eegnetv4_subj3_model_250.pth`
-- **Zweck**: Vollständig trainiertes EEGNetv4 Modell für Subjekt 3
+- **Inhalt**: Nur State Dict (Gewichte und Bias-Werte)
+- **Zweck**: Kompakte Speicherung für Produktionsanwendungen
 - **Verwendung**: Echtzeit-Klassifikation und Evaluierung
 - **Performance**: Typischerweise 70-85% Genauigkeit
 - **Status**: Bevorzugtes Modell für Echtzeit-Anwendungen
 
 #### `eegnetv4_subj3_model_250_full.pth`
-- **Zweck**: Vollständiges Modell mit allen Metadaten
-- **Verwendung**: Modell-Analyse und Debugging
-- **Inhalt**: Modell + Trainings-Historie + Konfiguration
-- **Größe**: Größer als .pth Datei, enthält zusätzliche Informationen
+- **Inhalt**: Vollständiges Modell (State Dict + Modell-Architektur + Metadaten)
+- **Zweck**: Komplette Modell-Informationen für Analyse und Debugging
+- **Verwendung**: Modell-Analyse, Debugging und Forschung
+- **Inhalt**: Gewichte + Architektur + Trainings-Historie + Konfiguration
+- **Größe**: Größer als .pth Datei, enthält alle Modell-Informationen
 
 ### ShallowFBCSPNet Modelle (Alternative für Offline-Anwendungen)
 
 #### `shallow_fbcsp_subj3_model_250.pth`
-- **Zweck**: ShallowFBCSPNet Modell für Subjekt 3
+- **Inhalt**: Nur State Dict (Gewichte und Bias-Werte)
+- **Zweck**: Kompakte Speicherung für Produktionsanwendungen
 - **Verwendung**: Offline-Klassifikation und Vergleich
 - **Performance**: 65-80% Genauigkeit
 - **Status**: Gute Offline-Performance, Streaming-Komplikationen
 
 #### `shallow_fbcsp_subj3_model_250_full.pth`
-- **Zweck**: Vollständiges ShallowFBCSPNet Modell für Subjekt 3
-- **Verwendung**: Detaillierte Modell-Analyse
-- **Inhalt**: Modell + Trainings-Historie + Konfiguration
+- **Inhalt**: Vollständiges Modell (State Dict + Modell-Architektur + Metadaten)
+- **Zweck**: Komplette Modell-Informationen für Subjekt 3
+- **Verwendung**: Detaillierte Modell-Analyse und Forschung
+- **Inhalt**: Gewichte + Architektur + Trainings-Historie + Konfiguration
 
 #### `shallow_fbcsp_good_subjects_model_250.pth`
-- **Zweck**: Multi-Subjekt Modell (Subjekte 1, 3, 8, 9)
+- **Inhalt**: Nur State Dict (Gewichte und Bias-Werte)
+- **Zweck**: Kompakte Speicherung für Multi-Subjekt-Modell
 - **Verwendung**: Verbesserte Generalisierung
 - **Performance**: Potenziell bessere Generalisierung
 - **Status**: Experimentell, für Forschungszwecke
 
 #### `shallow_fbcsp_good_subjects_model_250_full.pth`
-- **Zweck**: Vollständiges Multi-Subjekt Modell
+- **Inhalt**: Vollständiges Modell (State Dict + Modell-Architektur + Metadaten)
+- **Zweck**: Komplette Multi-Subjekt-Modell-Informationen
 - **Verwendung**: Detaillierte Analyse der Multi-Subjekt-Performance
-- **Inhalt**: Modell + Trainings-Historie + Konfiguration
+- **Inhalt**: Gewichte + Architektur + Trainings-Historie + Konfiguration
 
 ### Test-Modelle
 
 #### `test_model.pth`
+- **Inhalt**: Nur State Dict (Gewichte und Bias-Werte)
 - **Zweck**: Test-Modell für Entwicklung und Debugging
 - **Verwendung**: System-Tests und Validierung
 - **Status**: Nur für Entwicklungszwecke
 
 ## 🔧 Modell-Verwendung
 
-### Laden eines Modells
+### Laden eines Modells (State Dict)
 ```python
 import torch
 from braindecode.models import EEGNetv4, ShallowFBCSPNet
 
-# EEGNetv4 laden
+# EEGNetv4 laden (nur Gewichte)
 model = EEGNetv4(n_chans=16, n_outputs=4, n_times=250)
 model.load_state_dict(torch.load('models/eegnetv4_subj3_model_250.pth'))
 
-# ShallowFBCSPNet laden
+# ShallowFBCSPNet laden (nur Gewichte)
 model = ShallowFBCSPNet(n_chans=16, n_outputs=4, n_times=250)
 model.load_state_dict(torch.load('models/shallow_fbcsp_subj3_model_250.pth'))
+```
+
+### Laden eines vollständigen Modells
+```python
+import torch
+
+# Vollständiges Modell laden (Gewichte + Architektur + Metadaten)
+full_model = torch.load('models/eegnetv4_subj3_model_250_full.pth')
+model = full_model['model']  # Modell-Architektur
+model.load_state_dict(full_model['state_dict'])  # Gewichte laden
 ```
 
 ### Modell-Evaluierung
@@ -90,27 +107,24 @@ with torch.no_grad():
 - **ShallowFBCSPNet**: Gute Offline-Performance, Streaming-Komplikationen
 - **Multi-Subjekt**: Potenziell bessere Generalisierung, längere Trainingszeit
 
-## 🎯 Entscheidungsbegründungen
+## 🎯 Datei-Unterschiede
 
-### Warum verschiedene Modell-Formate?
-- **.pth Dateien**: Kompakte Speicherung für Produktionsanwendungen
-- **Full-Modelle**: Vollständige Informationen für Forschung und Debugging
-- **Multi-Subjekt**: Experimentelle Ansätze für bessere Generalisierung
+### State Dict Dateien (.pth ohne _full)
+- **Inhalt**: Nur Gewichte und Bias-Werte
+- **Größe**: Kompakt, minimaler Speicherplatz
+- **Verwendung**: Produktionsanwendungen, Echtzeit-Klassifikation
+- **Laden**: Erfordert separate Modell-Architektur-Definition
 
-### Warum EEGNetv4 als Primärwahl?
-- **Echtzeit-Performance**: Ausgezeichnete Streaming-Kompatibilität
-- **Konsistenz**: Stabile Performance über verschiedene Subjekte
-- **Einfachheit**: Weniger komplexe Architektur für schnelle Inferenz
-
-### Warum ShallowFBCSPNet als Alternative?
-- **Literatur-Standard**: Basierend auf etablierter Forschung
-- **Offline-Performance**: Gute Ergebnisse in Offline-Szenarien
-- **Vergleichsbasis**: Ermöglicht Modell-Vergleiche
+### Vollständige Modell-Dateien (_full.pth)
+- **Inhalt**: Gewichte + Modell-Architektur + Trainings-Historie + Konfiguration
+- **Größe**: Größer, enthält alle Modell-Informationen
+- **Verwendung**: Forschung, Debugging, Modell-Analyse
+- **Laden**: Selbstständig, enthält alle notwendigen Informationen
 
 ## 🚀 Schnellstart
 
 ### Modell für Echtzeit-Klassifikation verwenden
-1. **EEGNetv4 laden**: Verwenden Sie `eegnetv4_subj3_model_250.pth`
+1. **EEGNetv4 laden**: Verwenden Sie `eegnetv4_subj3_model_250.pth` (nur Gewichte)
 2. **Streaming starten**: `python src/03_streaming/eegnet_gui_classifier.py`
 3. **Performance überwachen**: Überprüfen Sie Genauigkeit und Latenz
 
@@ -155,7 +169,7 @@ with torch.no_grad():
 - **Qualitätskontrolle**: Validieren Sie Modelle vor Produktionsverwendung
 
 ### Modell-Auswahl
-- **Echtzeit-Anwendungen**: Verwenden Sie EEGNetv4
+- **Echtzeit-Anwendungen**: Verwenden Sie EEGNetv4 (State Dict)
 - **Offline-Analyse**: ShallowFBCSPNet für Vergleich
 - **Forschung**: Multi-Subjekt-Modelle für Generalisierung
 - **Entwicklung**: Test-Modelle für System-Validierung

@@ -106,7 +106,7 @@ pip install -r requirements.txt
 ## 🎮 Aufnahmen mit OpenBCI GUI und LabRecorder erstellen
 
 ### Setup-Prozess
-1. **OpenBCI GUI** und LabRecorder installieren
+1. **[OpenBCI GUI](https://openbci.com/downloads?_gl=1*xrq4ad*_gcl_au*MTYyNjYxODU1MC4xNzUyNDg0NTA5*_ga*MTM4NzIwNDc2LjE3NTI0ODQ1MDk.*_ga_HVMLC0ZWWS*czE3NTI0ODQ1MDkkbzEkZzAkdDE3NTI0ODQ1MDkkajYwJGwwJGgw)** und **[LabRecorder]**(https://github.com/labstreaminglayer/App-LabRecorder) installieren
 2. **LSL-Streams** in OpenBCI GUI konfigurieren
 3. **LabRecorder** starten und Streams auswählen
 4. **Session aufnehmen** mit Markern
